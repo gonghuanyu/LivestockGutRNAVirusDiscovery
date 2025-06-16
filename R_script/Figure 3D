@@ -1,0 +1,25 @@
+# Load necessary library
+library(ggplot2)
+
+# Create the data frame
+data <- data.frame(
+  host = c("camel", "cattle", "chicken", "duck", "goose", "pig", "rabbit", "sheep"),
+  number = c(235, 5501, 323, 484, 185, 688, 165, 2387)
+)
+
+# Define custom colors
+bar_colors <- c("camel" = "#ebc371", "cattle" = "#e1817f", "chicken" = "#a9c9e6", 
+                "duck" = "#9abdb7", "goose" = "#bd8cbb", "pig" = "#92c54b", 
+                "rabbit" = "#489089", "sheep" = "#f3b17f")
+text_color <- "black"  # Text color for labels
+
+# Plot the bar chart with solid axis lines, ticks, and labels on top of bars
+ggplot(data, aes(x = host, y = number, fill = host)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = number), vjust = -0.3, color = text_color, size = 4) +  # Add numbers on top of bars
+  scale_fill_manual(values = bar_colors, guide = "none") +  # Apply custom colors to the bars and remove the legend
+  theme_minimal() +
+  labs(title = "Number of samples from different hosts", x = "Host", y = "Number of vOTUs") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.line = element_line(color = "black", size = 1),  # Solid axis lines
+        axis.ticks = element_line(color = "black", size = 1)) # Adding ticks on the axes
