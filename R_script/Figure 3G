@@ -1,0 +1,112 @@
+# Load necessary libraries
+library(dplyr)
+library(stringr)
+library(VennDiagram)
+library(grid)
+
+# 1. Load data and calculate relative abundance
+data <- read.csv("aggregated_rpm_counts-goe.csv", row.names = 1)
+data$Total <- rowSums(data)
+relative_abundance <- data[, -ncol(data)] / data$Total
+
+# 2. Group by continent and extract virus lists
+relative_abundance$Continent <- str_extract(rownames(relative_abundance), "^[^_]+")
+binary_matrix <- relative_abundance[, !colnames(relative_abundance) %in% c("Continent")] > 0
+binary_df <- as.data.frame(binary_matrix)
+binary_df$Continent <- relative_abundance$Continent
+
+continent_groups <- split(binary_df, binary_df$Continent)
+virus_lists <- lapply(continent_groups, function(x) {
+  colnames(binary_df)[1:(ncol(binary_df)-1)][colSums(x[, 1:(ncol(x)-1)], na.rm = TRUE) > 0]
+})
+
+# Remove empty groups (if any)
+virus_lists <- virus_lists[lengths(virus_lists) > 0]
+
+# View the number of virus types detected per continent (for debugging)
+print("Number of virus types detected per continent:")
+lapply(virus_lists, length)
+
+# 3. Create Venn diagram
+continents <- names(virus_lists)
+virus_sets <- virus_lists
+
+# Define color palette for continents
+bar_colors <- c("Africa" = "#56b4e9", "Europe" = "#009e73", 
+                "North America" = "#f0e442", "Asia" = "#cc79a7", 
+                "Oceania" = "#999999")
+
+# Set black outline
+outline_color <- "black"  # Outline color set to black
+
+# Draw Venn diagram based on the number of continents
+if (length(continents) < 2) {
+  stop("At least 2 continents are required to draw a Venn diagram")
+} else if (length(continents) == 2) {
+  venn_data <- list(A = virus_sets[[1]], B = virus_sets[[2]])
+  venn.plot <- venn.diagram(
+    x = venn_data,
+    category.names = continents,
+    filename = NULL,  # Display directly, do not save to file
+    col = outline_color,  # Black outline
+    fill = bar_colors[continents[1:2]],  # Apply fill colors for two continents
+    alpha = 0.8,            # Transparency
+    cex = 1.5,            # Text size within regions
+    cat.cex = 1.5,        # Text size for continent names
+    cat.col = "black",    # Color for continent names
+    main = "Virus Distribution Across Continents",
+    main.cex = 2
+  )
+} else if (length(continents) == 3) {
+  venn_data <- list(A = virus_sets[[1]], B = virus_sets[[2]], C = virus_sets[[3]])
+  venn.plot <- venn.diagram(
+    x = venn_data,
+    category.names = continents,
+    filename = NULL,
+    output = TRUE,
+    col = outline_color,
+    fill = bar_colors[continents[1:3]],  # Apply fill colors for three continents
+    alpha = 0.8,
+    cex = 1.5,
+    cat.cex = 1.5,
+    cat.col = "black",
+    main = "Virus Distribution Across Continents",
+    main.cex = 2
+  )
+} else if (length(continents) == 4) {
+  venn_data <- list(A = virus_sets[[1]], B = virus_sets[[2]], C = virus_sets[[3]], D = virus_sets[[4]])
+  venn.plot <- venn.diagram(
+    x = venn_data,
+    category.names = continents,
+    filename = NULL,
+    output = TRUE,
+    col = outline_color,
+    fill = bar_colors[continents[1:4]],  # Apply fill colors for four continents
+    alpha = 0.8,
+    cex = 1.5,
+    cat.cex = 1.5,
+    cat.col = "black",
+    main = "Virus Distribution Across Continents",
+    main.cex = 2
+  )
+} else {
+  venn_data <- list(A = virus_sets[[1]], B = virus_sets[[2]], C = virus_sets[[3]], 
+                    D = virus_sets[[4]], E = virus_sets[[5]])
+  venn.plot <- venn.diagram(
+    x = venn_data,
+    category.names = continents,
+    filename = NULL,
+    output = TRUE,
+    col = outline_color,
+    fill = bar_colors[continents[1:5]],  # Apply fill colors for five continents
+    alpha = 0.8,
+    cex = 1.5,
+    cat.cex = 1.5,
+    cat.col = "black",
+    main = "Virus Distribution Across Continents",
+    main.cex = 2
+  )
+}
+
+# Display Venn diagram in R window
+grid.draw(venn.plot)
