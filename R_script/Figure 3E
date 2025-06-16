@@ -1,0 +1,116 @@
+# Load necessary libraries
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(stringr)
+library(agricolae)
+
+# 1. Convert to relative abundance
+data <- read.csv("aggregated_rpm_counts-host.csv", row.names = 1)
+data$Total <- rowSums(data)
+relative_abundance <- data[, -ncol(data)] / data$Total
+
+# 2. Calculate Shannon diversity index
+shannon_diversity <- function(abundance) {
+    abundance <- abundance[abundance > 0]
+    return(-sum(abundance * log(abundance)))
+}
+shannon_indices <- apply(relative_abundance, 1, shannon_diversity)
+relative_abundance$Shannon <- shannon_indices
+
+# 3. Group by host type
+relative_abundance$Host <- str_extract(rownames(relative_abundance), "^[^_]+")
+
+# Check sample sizes
+sample_counts <- relative_abundance %>%
+    group_by(Host) %>%
+    summarise(Count = n())
+print("Sample sizes:")
+print(sample_counts)
+relative_abundance <- relative_abundance[relative_abundance$Host %in% sample_counts$Host[sample_counts$Count >= 2], ]
+
+# Check variance of Shannon indices
+shannon_by_host <- relative_abundance %>%
+    group_by(Host) %>%
+    summarise(Var_Shannon = var(Shannon, na.rm = TRUE))
+print("Variance of Shannon indices:")
+print(shannon_by_host)
+
+# Calculate mean values
+host_diversity <- relative_abundance %>%
+    group_by(Host) %>%
+    summarise(Mean_Shannon = mean(Shannon, na.rm = TRUE))
+print("Mean values:")
+print(host_diversity)
+
+# Remove NA or Inf values
+relative_abundance <- relative_abundance[!is.na(relative_abundance$Shannon) & !is.infinite(relative_abundance$Shannon), ]
+
+# 4. Perform Tukey HSD test to generate significance letters
+# Conduct one-way ANOVA
+anova_result <- aov(Shannon ~ Host, data = relative_abundance)
+print("ANOVA results:")
+print(summary(anova_result))
+
+# Perform Tukey HSD test
+tukey_result <- HSD.test(anova_result, "Host", group = TRUE)
+print("Tukey HSD results:")
+print(tukey_result$groups)
+
+# Extract significance letters
+diff_letters <- data.frame(
+    Host = rownames(tukey_result$groups),
+    Letter = tukey_result$groups$groups
+)
+print("Significance letters:")
+print(diff_letters)
+
+# Check if diff_letters is empty
+if (nrow(diff_letters) == 0) {
+    stop("Failed to generate significance letters, possibly due to ANOVA or Tukey HSD test failure. Please check data distribution or sample size.")
+}
+
+# Calculate uniform letter display position (all letters on a horizontal line)
+max_shannon <- max(relative_abundance$Shannon, na.rm = TRUE)  # Get maximum Shannon value across all data
+letter_positions <- diff_letters %>%
+    mutate(Label_y = max_shannon + 0.5)  # Display all letters 0.5 units above the maximum value
+
+# 5. Create plot
+p <- ggplot(relative_abundance, aes(x = Host, y = Shannon, fill = Host)) +  
+    geom_boxplot(color = "black", alpha = 0.7) +
+    geom_jitter(width = 0, aes(color = Host), alpha = 0.6) +
+    labs(title = "Alpha Diversity", x = "Host", y = "Shannon Index") +
+    theme_minimal() +
+    theme(
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.ticks = element_line(color = "black"),
+        axis.ticks.length = unit(0.2, "cm"),
+        panel.grid.major = element_line(color = "gray", linewidth = 0.5),
+        panel.grid.minor = element_line(color = "lightgray", linewidth = 0.25),
+        panel.grid.major.y = element_line(color = "gray", linewidth = 0.5, linetype = "dashed"),
+        axis.line = element_line(color = "black", linewidth = 0.5)
+    ) +
+    scale_fill_manual(values = c("#56B4E9", "#E69F00", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999"), guide = "none") +
+    scale_color_manual(values = c("#56B4E9", "#E69F00", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999"), guide = "none") +
+    scale_y_continuous(
+        breaks = seq(0, 6, by = 1),
+        limits = c(0, max_shannon + 1),  # Dynamically adjust y-axis upper limit to ensure letters are visible
+        expand = c(0, 0),
+        minor_breaks = seq(0, 6, by = 0.5)
+    ) +
+    # Add significance letters
+    geom_text(
+        data = letter_positions,
+        aes(x = Host, y = Label_y, label = Letter),
+        size = 5,
+        vjust = -0.5
+    )
+
+# Save plot
+ggsave("host_alpha_diversity_with_diff_letters_horizontal.pdf", plot = p, width = 8, height = 6, units = "in", dpi = 300)
+
+# Display plot
+print(p)
