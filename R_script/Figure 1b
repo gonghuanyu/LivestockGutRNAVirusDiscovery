@@ -1,0 +1,125 @@
+# Load necessary libraries
+if (!requireNamespace("vegan", quietly = TRUE)) {
+    install.packages("vegan")
+}
+if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+    install.packages("RColorBrewer")
+}
+library(vegan)
+library(RColorBrewer)
+
+# Load data (assuming data is already loaded into the data variable)
+data <- read.csv("aggregated_rpm_counts-host.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# Clean the sample column and generate Host
+data$sample <- as.character(data$sample)
+data$sample[is.na(data$sample) | data$sample == ""] <- "Unknown_sample"
+data$Host <- sapply(strsplit(data$sample, "_"), function(x) {
+    if (length(x) > 0) tools::toTitleCase(x[1]) else "Unknown"
+})
+
+# Extract votu columns
+votu_cols <- grep("^votu", colnames(data), value = TRUE)
+if (length(votu_cols) == 0) stop("No votu columns found in data.")
+binary_data <- data[votu_cols]
+
+# Ensure row counts match
+if (nrow(binary_data) != nrow(data)) {
+    warning("Row mismatch between binary_data and data. Aligning data.")
+    data <- data[rownames(binary_data), ]
+}
+binary_data$Host <- data$Host
+
+# Group by host
+host_samples <- split(binary_data[votu_cols], binary_data$Host)
+
+# Set plotting parameters (fixed Y-axis upper limit at 6000)
+ylim_max <- 6000  # Fixed Y-axis upper limit
+xlim_max <- max(sapply(host_samples, nrow))  # X-axis maximum is the number of samples
+
+# Display plot in RStudio graphics window
+plot(NA, xlim = c(0, xlim_max), ylim = c(0, ylim_max),
+     xlab = "Number of Samples", ylab = "Average Number of Unique RNA Viruses",
+     main = "Sample-based RNA Virus Accumulation Curves Across Hosts (Smoothed)")
+
+# Color settings (referencing Figure C)
+colors <- c(
+    "Human gut" = "#FF7F0E",      # Orange
+    "Soil/Plant" = "#2CA02C",     # Green
+    "Aquatic" = "#9467BD",        # Purple
+    "Anthropogenic" = "#FF69B4",  # Pink
+    "Other human" = "#00CED1",    # Cyan
+    "Mammal gut" = "#FFD700",     # Gold
+    "Other animal" = "#8B4513",   # Brown
+    "Other" = "#808080"           # Gray
+)
+
+# Assign colors
+host_colors <- colors[1:length(host_samples)]
+names(host_colors) <- names(host_samples)
+
+# Track plotted hosts
+plotted_hosts <- character()
+plotted_colors <- character()
+
+# Calculate accumulation curves and smooth for each host
+for (i in seq_along(host_samples)) {
+    host <- names(host_samples)[i]
+    samples <- host_samples[[host]]
+    num_samples <- nrow(samples)
+    
+    # Clean data
+    samples <- as.matrix(samples)
+    samples <- apply(samples, 2, as.numeric)
+    samples[is.na(samples)] <- 0
+    samples[samples < 0] <- 0
+    # Binarize data
+    samples <- matrix(as.integer(samples > 0), nrow = nrow(samples))
+    samples <- samples[, colSums(samples) > 0, drop = FALSE]
+    if (ncol(samples) == 0) {
+        warning(paste("No valid data for", host, "after removing all-zero columns"))
+        next
+    }
+    
+    # Optimize step size: use 1 for ≤20 samples, num_samples/30 for >20
+    step <- ifelse(num_samples <= 20, 1, ceiling(num_samples / 30))
+    sample_sizes <- seq(1, num_samples, by = step)
+    if (sample_sizes[length(sample_sizes)] != num_samples) {
+        sample_sizes <- c(sample_sizes, num_samples)
+    }
+    
+    # Random sampling, repeated 32 times and averaged
+    n_iter <- 32  # Matches Figure C
+    accum <- numeric(length(sample_sizes))
+    accum_sd <- numeric(length(sample_sizes))
+    for (j in seq_along(sample_sizes)) {
+        size <- sample_sizes[j]
+        species_counts <- numeric(n_iter)
+        for (k in 1:n_iter) {
+            idx <- sample(1:nrow(samples), size, replace = FALSE)
+            subsample <- samples[idx, , drop = FALSE]
+            species_counts[k] <- sum(colSums(subsample) > 0)
+        }
+        accum[j] <- mean(species_counts)
+        accum_sd[j] <- sd(species_counts)
+    }
+    
+    # Spline interpolation for smoothing
+    spline_fit <- spline(sample_sizes, accum, n = 100 * length(sample_sizes))
+    
+    # Plot smoothed curve
+    lines(spline_fit$x, spline_fit$y, col = host_colors[host], lwd = 2)
+    
+    # Record plotted hosts
+    plotted_hosts <- c(plotted_hosts, host)
+    plotted_colors <- c(plotted_colors, host_colors[host])
+}
+
+# Add legend
+if (length(plotted_hosts) == 0) warning("No hosts plotted, check data for non-zero values.")
+legend("bottomright", legend = paste(plotted_hosts, " (", sapply(host_samples[plotted_hosts], nrow), " samples)", sep = ""),
+       col = plotted_colors, lwd = 2, cex = 0.8)
+
+# Add grid
+grid()
+
