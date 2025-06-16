@@ -1,1 +1,64 @@
+# Load required R packages
+library(ggplot2)
+library(maps)
+library(dplyr)
+library(ggforce) # For adding pie charts on the map
+
+# Create data frame
+data <- data.frame(
+    species = c("camel", "duck", "duck", "cattle", "cattle", "cattle", "cattle", "cattle", 
+                "cattle", "cattle", "chicken", "chicken", "chicken", "goose", "pig", 
+                "pig", "pig", "pig", "rabbit", "sheep", "sheep", "sheep", "sheep"),
+    Latitude = c(31, -24.21, 45, -24.21, 53.83, 45, 68.12, 32.09, 
+                 23.72, 37.55, -123.9, 109.76, 19.17, 45, 53.83, 
+                 45, 32.09, 23.72, 133, -42.46, 53.83, 32.09, -100),
+    Longitude = c(29.78, 133, -100, 133, 19.17, -100, -123.9, 109.76, 
+                  77.77, 126.86, -123.9, 109.76, 19.17, -100, 19.17, 
+                  -100, 109.76, 77.77, 133, 171.6, 19.17, 109.76, -100),
+    number = c(22, 10, 16, 5, 34, 120, 223, 63, 62, 18, 73, 12, 148, 9, 3, 
+               47, 41, 2, 14, 88, 6, 14, 20)
+)
+
+# Summarize data by grouping species at the same coordinates and calculating proportions
+data_summary <- data %>%
+    group_by(Latitude, Longitude, species) %>%
+    summarise(total = sum(number), .groups = "drop") %>%
+    group_by(Latitude, Longitude) %>%
+    mutate(proportion = total / sum(total), total_count = sum(total))
+
+# Load world map data
+world <- map_data("world")
+
+# Plot the map and add proportional pie charts and size legend
+ggplot() +
+    # Draw the world map
+    geom_polygon(data = world, aes(x = long, y = lat, group = group), fill = "gray90", color = "gray50") +
+    coord_fixed(1) +  # Set aspect ratio to 1 to ensure pie charts are circular
+    
+    # Draw pie charts at each coordinate to show species proportions with black outline
+    geom_arc_bar(data = data_summary,
+                 aes(x0 = Longitude, y0 = Latitude, r0 = 0, r = sqrt(total_count) / 2,  # Adjust pie chart size based on count
+                     amount = proportion, fill = species),
+                 stat = "pie", color = "black", size = 0.25) +  # Add 0.25pt black outline
+    
+    # Set colors for species
+    scale_fill_manual(name = "Species", values = c("camel" = "#F8766D", "duck" = "#7CAE00", 
+                                                   "cattle" = "#00BFC4", "chicken" = "#C77CFF", 
+                                                   "goose" = "#FF61C3", "pig" = "#00BA38", 
+                                                   "rabbit" = "#619CFF", "sheep" = "#F564E3")) +
+    
+    # Add circular legend at the bottom center of the map
+    annotate("point", x = 0, y = -120, size = sqrt(50) / 1.1, color = "gray50") +
+    annotate("point", x = 20, y = -120, size = sqrt(100) / 1.1, color = "gray50") +
+    annotate("point", x = 40, y = -120, size = sqrt(200) / 1.1, color = "gray50") +
+    annotate("point", x = 60, y = -120, size = sqrt(300) / 1.1, color = "gray50") +
+    annotate("text", x = 0, y = -130, label = "[1, 50]", hjust = 0.5) +
+    annotate("text", x = 20, y = -130, label = "[50, 100]", hjust = 0.5) +
+    annotate("text", x = 40, y = -130, label = "[100, 200]", hjust = 0.5) +
+    annotate("text", x = 60, y = -130, label = "[200, 300]", hjust = 0.5) +
+    
+    # Set title and adjust theme
+    labs(title = "Geographical Distribution of Species Proportions") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
 
