@@ -8,9 +8,9 @@ data <- data.frame(
 )
 
 # Define custom colors
-bar_colors <- c("camel" = "#ebc371", "cattle" = "#e1817f", "chicken" = "#a9c9e6", 
-                "duck" = "#9abdb7", "goose" = "#bd8cbb", "pig" = "#92c54b", 
-                "rabbit" = "#489089", "sheep" = "#f3b17f")
+bar_colors <- c("camel" = "#56b4e9", "cattle" = "#e69f00", "chicken" = "#009e73", 
+                "duck" = "#f0e442", "goose" = "#0072b2", "pig" = "#d55e00", 
+                "rabbit" = "#cc79a7", "sheep" = "#999999")
 text_color <- "black"  # Text color for labels
 
 # Plot the bar chart with solid axis lines, ticks, and labels on top of bars
