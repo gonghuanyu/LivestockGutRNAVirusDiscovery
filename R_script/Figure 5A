@@ -1,0 +1,48 @@
+# Install and load required packages
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  install.packages("ggplot2")
+}
+if (!requireNamespace("reshape2", quietly = TRUE)) {
+  install.packages("reshape2")
+}
+library(ggplot2)
+library(reshape2)
+
+# Read data
+data <- read.table("结果分布.txt", header = TRUE, sep = "\t", check.names = FALSE)
+
+# Remove the last column (total column), keeping only binary data
+data <- data[, -ncol(data)]
+
+# Specify exact order (reverse order)
+group_order <- rev(c("SG001", "SG002", "SG003", "SG004", "SG005", "SG006", "SG007", 
+                "SG008", "SG009", "SG010", "SG011", "SG012", "SG013", "SG014", 
+                "SG015", "SG016", "SG017", "SG018", "SG019", "SG020", "SG021", 
+                "SG022", "SG024", "SG025", "SG026", "SG031", "SG038", "SG041", 
+                "SG044", "SG050", "SG052", "SG054", "SG055", "SG059", "SG075", 
+                "SG089", "SG107", "SG108", "SG131", "SG156", "SG187", "kitrNovel", 
+                "NegaNovel", "LenaNovel", "DuplNovel", "PisuNovel"))
+
+# Convert Group_Name to factor and specify levels
+data$Group_Name <- factor(data$Group_Name, levels = group_order)
+
+# Transform data frame to long format
+data_long <- melt(data, id.vars = "Group_Name", variable.name = "Gene_Category", value.name = "Value")
+
+# Create binary plot
+ggplot(data_long, aes(x = Gene_Category, y = Group_Name, fill = factor(Value))) +  
+  geom_tile(width = 0.95, height = 0.95) +  
+  scale_fill_manual(values = c("#F0F0F0", "#87CEEB"), labels = c("0", "1")) +  
+  theme_minimal() +  
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),  
+    axis.text.y = element_text(size = 10),  
+    axis.title = element_text(size = 12),   
+    legend.position = "top"                 
+  ) +
+  labs(
+    fill = "Presence",  
+    x = "Gene Category",  
+    y = "Group"          
+  ) +
+  coord_fixed(ratio = 0.5)
