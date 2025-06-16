@@ -1,0 +1,87 @@
+# Load necessary R packages
+library(pheatmap)
+library(RColorBrewer)
+
+# Read CSV file
+rpkm_data <- read.csv("15otu.csv", row.names = 1, check.names = FALSE)
+
+# Convert to matrix
+rpkm_data <- as.matrix(rpkm_data)
+
+# Check data dimensions and content
+cat("Data dimensions:", dim(rpkm_data), "\n")
+
+# Perform log10 transformation on RPKM data (add 1 to avoid log(0))
+rpkm_data_log <- log10(rpkm_data + 1)
+
+# Retain original virus IDs as row names
+rownames(rpkm_data_log) <- rownames(rpkm_data)
+
+# Retain sample names as column names
+sample_names <- colnames(rpkm_data)
+
+# Set heatmap color scheme (yellow to red)
+color_palette <- colorRampPalette(brewer.pal(9, "YlOrRd"))(50)
+
+# Create virus grouping (based on uploaded data)
+# First 9 are high-abundance OTUs, last 6 are large-genome viruses
+virus_group <- data.frame(Group = c(rep("High_Abundance_OTU", 9), 
+                                    rep("Large_Genome", 6)))
+rownames(virus_group) <- rownames(rpkm_data)
+
+# Create sample grouping
+# Poultry: chicken, duck, goose; Mammals: camel, cattle, pig, rabbit, sheep
+sample_group <- data.frame(Type = c("Mammal", "Mammal", "Poultry", "Poultry", 
+                                    "Poultry", "Mammal", "Mammal", "Mammal"))
+rownames(sample_group) <- sample_names
+
+# Create heatmap (without clustering trees)
+pheatmap(
+  rpkm_data_log,                      # Log-transformed abundance matrix
+  color = color_palette,              # Color scheme
+  scale = "none",                     # No additional standardization (already log-transformed)
+  cluster_rows = FALSE,               # Do not cluster viruses (rows)
+  cluster_cols = FALSE,               # Do not cluster samples (columns)
+  annotation_row = virus_group,       # Virus grouping annotation
+  annotation_col = sample_group,      # Sample grouping annotation
+  show_rownames = TRUE,               # Display virus names
+  show_colnames = TRUE,               # Display sample names
+  main = "Abundance of RNA Viruses Across Livestock Samples",
+  fontsize = 12,
+  fontsize_row = 6,                   # Reduce row name font size to accommodate long virus IDs
+  fontsize_col = 10,                  # Column name font size
+  border_color = "white",
+  cellwidth = 30,                     # Increase cell width
+  cellheight = 20,                    # Cell height
+  treeheight_row = 0,                 # Set row clustering tree height to 0 (not displayed)
+  treeheight_col = 0,                 # Set column clustering tree height to 0 (not displayed)
+  filename = "heatmap_virus_abundance_full_names.png",  # Save as PNG
+  width = 12,                         # Increase image width
+  height = 8                          # Increase image height
+)
+
+# Save as PDF (using landscape layout)
+pdf("heatmap_virus_abundance_full_names.pdf", width = 12, height = 8, paper = "a4r")
+pheatmap(
+  rpkm_data_log,
+  color = color_palette,
+  scale = "none",
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  annotation_row = virus_group,
+  annotation_col = sample_group,
+  show_rownames = TRUE,
+  show_colnames = TRUE,
+  main = "Abundance of RNA Viruses Across Livestock Samples",
+  fontsize = 12,
+  fontsize_row = 6,                   # Reduce row name font size
+  fontsize_col = 10,
+  border_color = "white",
+  cellwidth = 30,                     # Increase cell width
+  cellheight = 20,
+  treeheight_row = 0,
+  treeheight_col = 0
+)
+dev.off()
+
+cat("Heatmap with full names generated successfully!\n")
