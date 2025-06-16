@@ -1,0 +1,24 @@
+# Load necessary library
+library(ggplot2)
+
+# Create the data frame
+data <- data.frame(
+  host = c("Africa", "Asia", "Europe", "North America", "Oceania"),
+  number = c(235, 4296, 1348, 4686, 3015)
+)
+
+# Define custom colors
+bar_colors <- c("Africa" = "#56b4e9", "Europe" = "#009e73", 
+                "North America" = "#f0e442", "Asia" = "#cc79a7", "Oceania" = "#999999")
+text_color <- "black"  # Text color for labels
+
+# Plot the bar chart with solid axis lines, ticks, and labels on top of bars
+ggplot(data, aes(x = host, y = number, fill = host)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = number), vjust = -0.3, color = text_color, size = 4) +  # Add numbers on top of bars
+  scale_fill_manual(values = bar_colors, guide = "none") +  # Apply custom colors to the bars and remove the legend
+  theme_minimal() +
+  labs(title = "Number of samples from different Geographical location", x = "Geographical location", y = "Number of vOTUs") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.line = element_line(color = "black", size = 1),  # Solid axis lines
+        axis.ticks = element_line(color = "black", size = 1)) # Adding ticks on the axes
