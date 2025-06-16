@@ -1,0 +1,120 @@
+# Load necessary libraries
+library(vegan)       # For Bray-Curtis distance, PCoA, Adonis, and ANOSIM
+library(ggplot2)     # For plotting
+library(ggpubr)      # For stat_ellipse
+library(dplyr)       # For data processing
+library(stringr)     # For string operations
+
+# 1. Read data and convert to relative abundance
+data <- read.csv("aggregated_rpm_counts-host.csv", row.names = 1)
+data$Total <- rowSums(data, na.rm = TRUE)  # Calculate total sum, ignoring NA
+
+# Check for NA, NaN, or Inf in data
+print("Checking for missing values in original data:")
+print(sum(is.na(data)))  # Count NA values
+print(sum(is.nan(as.matrix(data))))  # Count NaN values
+print(sum(is.infinite(as.matrix(data))))  # Count Inf values
+
+# Check for rows with Total equal to 0
+zero_total_rows <- sum(data$Total == 0)
+print("Number of rows with Total equal to 0:")
+print(zero_total_rows)
+
+# Remove rows with Total equal to 0
+if (zero_total_rows > 0) {
+    data <- data[data$Total > 0, ]
+    print("Rows with Total equal to 0 have been removed")
+}
+
+# Calculate relative abundance
+relative_abundance <- data[, -ncol(data)] / data$Total
+
+# Check for NA, NaN, or Inf in relative abundance
+print("Checking for missing values in relative abundance:")
+print(sum(is.na(relative_abundance)))  # Count NA values
+print(sum(is.nan(as.matrix(relative_abundance))))  # Count NaN values
+print(sum(is.infinite(as.matrix(relative_abundance))))  # Count Inf values
+
+# Remove rows containing NA, NaN, or Inf
+relative_abundance <- relative_abundance[complete.cases(relative_abundance) & 
+                                        !apply(relative_abundance, 1, function(x) any(is.infinite(x))), ]
+
+# 2. Group by host type
+relative_abundance$Host <- str_extract(rownames(relative_abundance), "^[^_]+")
+
+# Check sample sizes
+sample_counts <- relative_abundance %>%
+    group_by(Host) %>%
+    summarise(Count = n())
+print("Sample sizes:")
+print(sample_counts)
+relative_abundance <- relative_abundance[relative_abundance$Host %in% sample_counts$Host[sample_counts$Count >= 2], ]
+
+# 3. Prepare abundance matrix
+abundance_matrix <- relative_abundance[, !colnames(relative_abundance) %in% c("Host")]
+rownames(abundance_matrix) <- rownames(relative_abundance)
+
+# Check for NA, NaN, or Inf in abundance matrix again
+print("Checking for missing values in abundance matrix:")
+print(sum(is.na(abundance_matrix)))  # Count NA values
+print(sum(is.nan(as.matrix(abundance_matrix))))  # Count NaN values
+print(sum(is.infinite(as.matrix(abundance_matrix))))  # Count Inf values
+
+# 4. Calculate Bray-Curtis distance
+bray_dist <- vegdist(abundance_matrix, method = "bray", na.rm = TRUE)  # Set na.rm = TRUE as a precaution
+
+# 5. Perform PCoA analysis
+pcoa_result <- cmdscale(bray_dist, k = 2, eig = TRUE)
+pcoa_df <- as.data.frame(pcoa_result$points)
+colnames(pcoa_df) <- c("PCoA1", "PCoA2")
+pcoa_df$Host <- relative_abundance$Host
+eig <- pcoa_result$eig
+var_explained <- eig / sum(eig) * 100
+xlab <- paste0("PCoA1 (", round(var_explained[1], 2), "%)")
+ylab <- paste0("PCoA2 (", round(var_explained[2], 2), "%)")
+
+# Check sample sizes (ensure reliability for Adonis and ANOSIM analysis)
+sample_counts_beta <- table(pcoa_df$Host)
+print("Beta diversity sample sizes:")
+print(sample_counts_beta)
+if (any(sample_counts_beta < 2)) {
+    stop("Some host types have fewer than 2 samples, cannot perform Adonis or ANOSIM analysis.")
+}
+
+# 6. Run Adonis (PERMANOVA) analysis
+adonis_result <- adonis2(bray_dist ~ Host, data = pcoa_df, permutations = 999)
+adonis_r2 <- round(adonis_result$R2[1], 3)
+adonis_p <- ifelse(adonis_result$`Pr(>F)`[1] < 0.001, "< 0.001", format(adonis_result$`Pr(>F)`[1], digits = 3, scientific = FALSE))
+
+# 7. Run ANOSIM analysis
+anosim_result <- anosim(bray_dist, pcoa_df$Host, permutations = 999)
+anosim_r <- round(anosim_result$statistic, 3)
+anosim_p <- ifelse(anosim_result$signif < 0.001, "< 0.001", format(anosim_result$signif, digits = 3, scientific = FALSE))
+
+# Create statistical results text
+stat_text <- paste0("Adonis: R² = ", adonis_r2, ", p ", adonis_p, "\n",
+                    "ANOSIM: R = ", anosim_r, ", p ", anosim_p)
+
+# 8. Create PCoA plot
+pcoa_plot <- ggplot(pcoa_df, aes(x = PCoA1, y = PCoA2, color = Host)) +
+    geom_point(size = 2, alpha = 1) +
+    stat_ellipse(aes(group = Continent), type = "norm", level = 0.95, linetype = "solid", alpha = 1, linewidth = 1) +
+    labs(title = "Beta Diversity (PCoA)\nBray-Curtis Distance", x = xlab, y = ylab) +
+    theme_minimal(base_size = 14) +
+    theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 20),
+        axis.line = element_line(color = "black", linewidth = 1),
+        axis.ticks = element_line(color = "black", linewidth = 1),
+        axis.ticks.length = unit(0.2, "cm"),
+        panel.grid = element_blank(),
+        legend.position = "right",
+        legend.box = "vertical",
+        legend.background = element_rect(fill = "white", color = NA),
+        legend.title = element_text(face = "bold")
+    ) +
+    scale_color_manual(values = c("#56B4E9", "#E69F00", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999")) +
+    guides(color = guide_legend(override.aes = list(size = 6))) +
+    annotate("text", x = -Inf, y = Inf, label = stat_text, hjust = 0, vjust = 1, size = 4, fontface = "bold")
+
+# Display plot
+print(pcoa_plot)
