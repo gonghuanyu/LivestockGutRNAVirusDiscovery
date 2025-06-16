@@ -1,0 +1,127 @@
+# Install and load necessary packages
+if (!requireNamespace("ggbreak", quietly = TRUE)) {
+  install.packages("ggbreak")
+}
+library(ggplot2)
+library(ggbreak)
+library(patchwork)
+
+# Create data using intersection counts
+counts <- c(
+  "edgar2022" = 625974,
+  "zayed2022" = 9581,
+  "hou2023" = 104773,
+  "neri2022" = 17831,
+  "wolf2020" = 601,
+  "This Study" = 2160,
+  "wolf2018" = 839,
+  "This Study&hou2023" = 142,
+  "edgar2022&This Study" = 2452,
+  "This Study&neri2022" = 751,
+  "This Study&wolf2018" = 12,
+  "edgar2022&This Study&hou2023" = 155,
+  "edgar2022&This Study&neri2022&wolf2018" = 5,
+  "edgar2022&This Study&neri2022" = 245,
+  "edgar2022&This Study&wolf2018" = 28,
+  "This Study&hou2023&neri2022" = 5,
+  "edgar2022&This Study&hou2023&neri2022" = 9,
+  "edgar2022&This Study&hou2023&wolf2018" = 5,
+  "edgar2022&This Study&neri2022&zayed2022" = 1,
+  "This Study&hou2023&wolf2018" = 1,
+  "edgar2022&This Study&hou2023&zayed2022" = 1,
+  "edgar2022&This Study&zayed2022" = 3,
+  "edgar2022&This Study&hou2023&neri2022&wolf2018" = 1,
+  "This Study&neri2022&wolf2018" = 1
+)
+
+# Define set names
+single_sets <- c("edgar2022", "zayed2022", "hou2023", "neri2022", "wolf2020", "This Study", "wolf2018")
+
+# Create main bar plot data frame and sort by LogCount in descending order
+df_main <- data.frame(
+  Intersection = names(counts),
+  LogCount = counts
+)
+df_main <- df_main[order(df_main$LogCount, decreasing = TRUE), ]
+df_main$Intersection <- factor(df_main$Intersection, levels = df_main$Intersection)
+
+# Create main bar plot (single plot)
+p1 <- ggplot(df_main, aes(x = Intersection, y = LogCount)) +
+  geom_bar(stat = "identity", fill = "black", width = 0.9) +
+  geom_text(aes(label = sprintf("%.0f", LogCount)), vjust = -0.5, size = 3.5, color = "black") +
+  labs(y = "Number of vOTU") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.line.x = element_line(color = "black", size = 0.5),
+    axis.line.y = element_line(color = "black", size = 0.5),
+    axis.ticks.x = element_line(color = "black", size = 0.5),
+    axis.ticks.y = element_line(color = "black", size = 0.5),
+    panel.grid = element_blank(),
+    plot.margin = unit(c(0.5, 0.5, 0, 0.5), "cm")
+  ) +
+  # Add Y-axis break
+  scale_y_break(breaks = c(10000, 110000), scales = "free", space = 0.2)
+
+# Intersection dot matrix part (unchanged)
+matrix_data <- data.frame()
+for (intersection in names(counts)) {
+  sets <- unlist(strsplit(intersection, "&"))
+  for (set in single_sets) {
+    value <- ifelse(set %in% sets, 1, 0)
+    matrix_data <- rbind(matrix_data, data.frame(Intersection = intersection, Set = set, Value = value))
+  }
+}
+matrix_data$Intersection <- factor(matrix_data$Intersection, levels = levels(df_main$Intersection))
+matrix_data$Y_pos <- as.numeric(factor(matrix_data$Set, levels = rev(single_sets)))
+
+line_data <- data.frame()
+for (intersection in unique(matrix_data$Intersection)) {
+  subset <- matrix_data[matrix_data$Intersection == intersection & matrix_data$Value == 1, ]
+  if (nrow(subset) > 1) {
+    for (i in 1:(nrow(subset) - 1)) {
+      line_data <- rbind(line_data, data.frame(
+        Intersection = intersection,
+        x = subset$Intersection[i],
+        xend = subset$Intersection[i + 1],
+        y = subset$Y_pos[i],
+        yend = subset$Y_pos[i + 1]
+      ))
+    }
+  }
+}
+line_data$Intersection <- factor(line_data$Intersection, levels = levels(df_main$Intersection))
+line_data$x <- factor(line_data$x, levels = levels(df_main$Intersection))
+line_data$xend <- factor(line_data$xend, levels = levels(df_main$Intersection))
+
+p2 <- ggplot() +
+  geom_point(data = matrix_data, aes(x = Intersection, y = Y_pos, color = factor(Value)), 
+             size = 4, shape = 16) +
+  scale_color_manual(values = c("0" = "grey80", "1" = "black")) +
+  geom_segment(data = line_data, aes(x = x, xend = xend, y = y, yend = yend), 
+               size = 1.5, color = "black") +
+  scale_y_continuous(
+    breaks = 1:7,
+    labels = rev(single_sets)
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 10, angle = 0, hjust = 1),
+    axis.title.y = element_blank(),
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    plot.margin = unit(c(0, 0.5, 0.5, 0.5), "cm"),
+    legend.position = "none"
+  )
+
+# Combine plots
+combined_plot <- p1 / p2 + plot_layout(heights = c(3, 2))
+
+# Display plot
+print(combined_plot)
