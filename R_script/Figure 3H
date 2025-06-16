@@ -1,0 +1,107 @@
+# Load necessary libraries
+library(igraph)
+library(dplyr)
+library(stringr)
+
+# Reconstruct data
+data <- read.csv("aggregated_rpm_counts-host.csv", row.names = 1)
+data$Total <- rowSums(data, na.rm = TRUE)
+relative_abundance <- data[, -ncol(data)] / data$Total
+relative_abundance$Host <- str_extract(rownames(relative_abundance), "^[^_]+")
+binary_matrix <- relative_abundance[, !colnames(relative_abundance) %in% c("Shannon", "Host")] > 0
+binary_df <- as.data.frame(binary_matrix)
+binary_df$Host <- relative_abundance$Host
+host_groups <- split(binary_df, binary_df$Host)
+valid_virus_lists <- host_groups[lengths(host_groups) > 0]
+valid_virus_lists <- lapply(valid_virus_lists, function(x) {
+  colnames(binary_df)[1:(ncol(binary_df)-1)][colSums(x[, 1:(ncol(x)-1)], na.rm = TRUE) > 0]
+})
+
+# Calculate shared relationships between hosts
+hosts <- names(valid_virus_lists)
+edges <- data.frame(from = character(), to = character(), weight = numeric())
+for (i in 1:(length(hosts)-1)) {
+  for (j in (i+1):length(hosts)) {
+    shared_viruses <- length(intersect(valid_virus_lists[[hosts[i]]], valid_virus_lists[[hosts[j]]]))
+    if (shared_viruses > 0) {
+      edges <- rbind(edges, data.frame(from = hosts[i], to = hosts[j], weight = shared_viruses))
+    }
+  }
+}
+
+# Create network graph object
+net <- graph_from_data_frame(edges, vertices = hosts, directed = FALSE)
+
+# Set node colors (consistent with historical conversation)
+colors <- c("#56B4E9", "#E69F00", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999")
+V(net)$color <- colors[1:length(hosts)]
+
+# Set node sizes (based on total virus count)
+virus_counts <- sapply(valid_virus_lists, length)  # Total virus count
+V(net)$size <- 10 + sqrt(virus_counts) / 2
+
+# Calculate unique virus counts for each host
+unique_virus_counts <- sapply(hosts, function(host) {
+  host_viruses <- valid_virus_lists[[host]]
+  other_viruses <- unlist(valid_virus_lists[hosts != host])
+  length(setdiff(host_viruses, other_viruses))
+})
+
+# Set node labels (host name + unique virus count)
+V(net)$label <- paste0(V(net)$name, "\n", unique_virus_counts)
+
+# Set edge widths (non-linear transformation)
+E(net)$width <- 1 + sqrt(E(net)$weight) / 5
+
+# Calculate layout (optimized for near-circular distribution)
+layout <- layout_in_circle(net)  # Use circular layout
+# For fine-tuning, layout_with_fr can be used to enhance uniformity:
+# layout <- layout_with_fr(net, repulserad = vcount(net)^3, niter = 2000, area = vcount(net)^2.5)
+
+# Check range of shared virus counts
+print("Shared viruses range:")
+print(range(edges$weight))
+
+# Draw network graph and legends
+pdf("Host_Virus_Network_with_Legends.pdf", width = 14, height = 8)
+layout(matrix(c(1, 2), ncol = 2), widths = c(3, 1))  # Main plot occupies 3/4, legends occupy 1/4
+
+# Draw main plot (left side)
+par(mar = c(5, 4, 4, 2))
+plot(net,
+     layout = layout,
+     vertex.label.cex = 0.7,        # Moderate font size
+     vertex.label.color = "black",
+     vertex.label.dist = 0,         # Labels placed inside nodes
+     edge.color = "gray50",
+     main = "Host-Virus Sharing Network",
+     rescale = TRUE)
+
+# Draw legends (right side)
+par(mar = c(5, 0, 4, 4))
+plot.new()
+
+# Legend 1: Circle size scale (hollow circles)
+circle_sizes <- c(10 + sqrt(200) / 2, 10 + sqrt(1000) / 2, 10 + sqrt(3000) / 2, 10 + sqrt(5500) / 2)
+circle_labels <- c("200", "1000", "3000", "5500")
+legend("top",
+       legend = circle_labels,
+       pt.cex = circle_sizes / 5,
+       pch = 1,                   # Hollow circles
+       col = "black",
+       title = "Number of Virus Types",
+       bty = "n",
+       cex = 1.2)
+
+# Legend 2: Line width scale
+line_widths <- c(1 + sqrt(10) / 5, 1 + sqrt(100) / 5, 1 + sqrt(300) / 5, 1 + sqrt(500) / 5)
+line_labels <- c("10", "100", "300", "500")
+legend("bottom",
+       legend = line_labels,
+       lwd = line_widths,
+       col = "gray50",
+       title = "Number of Shared Viruses",
+       bty = "n",
+       cex = 1.2)
+
+dev.off()
