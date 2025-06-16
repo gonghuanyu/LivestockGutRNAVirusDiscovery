@@ -1,0 +1,106 @@
+# Install and load ggplot2 package
+library(ggplot2)
+
+# Create data frame
+data <- data.frame(
+  Phylum = c("Acidobacteriota", "Actinomycetota", "Actinomycetota", "Actinomycetota", 
+             "Bacillota", "Bacillota", "Bacillota", "Bacillota", "Bacillota", "Bacillota", 
+             "Bacillota_A", "Bacillota_A", "Bacillota_A", "Bacillota_A", "Bacillota_A", 
+             "Bacillota_A", "Bacillota_A", "Bacillota_A", "Bacteroidota", "Bacteroidota", 
+             "Bacteroidota", "Bacteroidota", "Bacteroidota", "Chloroflexota", "Desulfobacterota_F", 
+             "Pseudomonadota", "Pseudomonadota", "Pseudomonadota", "Pseudomonadota", 
+             "Pseudomonadota", "Pseudomonadota", "Pseudomonadota", "Pseudomonadota", 
+             "Pseudomonadota", "Pseudomonadota", "Pseudomonadota", "Pseudomonadota", 
+             "Pseudomonadota", "Pseudomonadota", "Pseudomonadota", "Pseudomonadota", 
+             "Pseudomonadota", "Spirochaetota", "Thermoplasmatota", "Thermoproteota", 
+             "Thermoproteota"),
+  family = c("Acidobacteriaceae", "Microbacteriaceae", "Mycobacteriaceae", "Nanopelagicaceae", 
+             "Coprobacillaceae", "Erysipelotrichaceae", "Halobacillaceae", "Lactobacillaceae", 
+             "Staphylococcaceae", "Streptococcaceae", "Anaerovoracaceae", "Borkfalkiaceae", 
+             "CAG-74", "CAG-508", "Clostridiaceae", "Lachnospiraceae", "Oscillospiraceae", 
+             "Ruminococcaceae", "Bacteroidaceae", "Crocinitomicaceae", "Dysgonomonadaceae", 
+             "Flavobacteriaceae", "Rikenellaceae", "UBA826", "UBA1163", "Algiphilaceae", 
+             "Alteromonadaceae", "Burkholderiaceae", "Burkholderiaceae_B", "Burkholderiaceae_C", 
+             "Enterobacteriaceae", "HTCC2089", "Maricaulaceae", "Marinomonadaceae", 
+             "Pseudohongiellaceae", "Rhodobacteraceae", "Rs-D84", "Sedimenticolaceae", 
+             "Stappiaceae", "Steroidobacteraceae", "UBA3031", "Vibrionaceae", "Treponemataceae", 
+             "Methanomethylophilaceae", "Nitrososphaeraceae", "Sulfolobaceae"),
+  count = c(1, 1, 2, 2, 2, 2, 1, 3, 3, 2, 1, 1, 1, 3, 5, 9, 2, 2, 10, 1, 1, 3, 1, 2, 1,
+            1, 1, 2, 2, 1, 4, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1)
+)
+
+# Define 11 color palette
+colors <- c("#9467BD", "#FF7F0E", "#17BECF", "#1F77B4", "#CAB2D6", "#FF7F50", 
+            "#8C564B", "#6699CC", "#FFA500", "#E377C2", "#FFFF99")
+
+# Create global color mapping
+all_phyla <- unique(data$Phylum)
+phylum_colors <- setNames(colors[1:length(all_phyla)], all_phyla)
+
+# Split data into two parts
+data_part1 <- data[1:23, ]
+data_part2 <- data[24:46, ]
+
+# Families to highlight
+highlight_families <- c("Stappiaceae", "Rhodobacteraceae", "Steroidobacteraceae", "Algiphilaceae")
+
+# Set y-axis range
+y_limits <- c(0, 11)
+
+# Calculate sorting and highlight positions for the first plot
+sorted_families1 <- reorder(data_part1$family, -data_part1$count)
+highlight_idx1 <- match(highlight_families, levels(sorted_families1))
+highlight_idx1 <- highlight_idx1[!is.na(highlight_idx1)]  # Remove unmatched
+highlight_y1 <- data_part1$count[data_part1$family %in% highlight_families] + 2
+
+# Calculate sorting and highlight positions for the second plot
+sorted_families2 <- reorder(data_part2$family, -data_part2$count)
+highlight_idx2 <- match(highlight_families, levels(sorted_families2))
+highlight_idx2 <- highlight_idx2[!is.na(highlight_idx2)]  # Remove unmatched
+highlight_y2 <- data_part2$count[data_part2$family %in% highlight_families] + 2
+
+# Create first bar plot
+p1 <- ggplot(data_part1, aes(x = reorder(family, -count), y = count, fill = Phylum)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), vjust = -0.5, size = 2, color = "black") +
+  annotate("point", 
+           x = highlight_idx1, 
+           y = highlight_y1, 
+           shape = 17, size = 2, color = "red") +
+  scale_fill_manual(values = phylum_colors) +
+  scale_y_continuous(limits = y_limits, breaks = seq(0, 10, by = 2)) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Arial", size = 7),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    axis.line = element_line(color = "black", size = 0.5),
+    axis.ticks = element_line(color = "black", size = 0.5),
+    axis.title.x = element_text(),
+    axis.title.y = element_text()
+  ) +
+  labs(title = "Family Counts (Part 1)", x = "Family", y = "Count", fill = "Host Phylum")
+
+# Create second bar plot
+p2 <- ggplot(data_part2, aes(x = reorder(family, -count), y = count, fill = Phylum)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), vjust = -0.5, size = 2, color = "black") +
+  annotate("point", 
+           x = highlight_idx2, 
+           y = highlight_y2, 
+           shape = 17, size = 2, color = "red") +
+  scale_fill_manual(values = phylum_colors) +
+  scale_y_continuous(limits = y_limits, breaks = seq(0, 10, by = 2)) +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Arial", size = 7),
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    axis.line = element_line(color = "black", size = 0.5),
+    axis.ticks = element_line(color = "black", size = 0.5),
+    axis.title.x = element_text(),
+    axis.title.y = element_text()
+  ) +
+  labs(title = "Family Counts (Part 2)", x = "Family", y = "Count", fill = "Host Phylum")
+
+# Display plots
+print(p1)
+print(p2)
