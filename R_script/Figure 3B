@@ -1,0 +1,147 @@
+# Load necessary libraries
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(stringr)
+library(agricolae)  # For Tukey HSD test
+
+# 1. Read data and convert to relative abundance
+data <- read.csv("aggregated_rpm_counts-goe.csv", row.names = 1)
+data$Total <- rowSums(data, na.rm = TRUE)  # Calculate total sum, ignoring NA
+
+# Check for NA, NaN, or Inf in data
+print("Checking for missing values in original data:")
+print(sum(is.na(data)))  # Count NA values
+print(sum(is.nan(as.matrix(data))))  # Count NaN values
+print(sum(is.infinite(as.matrix(data))))  # Count Inf values
+
+# Check for rows with Total equal to 0
+zero_total_rows <- sum(data$Total == 0)
+print("Number of rows with Total equal to 0:")
+print(zero_total_rows)
+
+# Remove rows with Total equal to 0
+if (zero_total_rows > 0) {
+    data <- data[data$Total > 0, ]
+    print("Rows with Total equal to 0 have been removed")
+}
+
+# Calculate relative abundance
+relative_abundance <- data[, -ncol(data)] / data$Total
+
+# Check for NA, NaN, or Inf in relative abundance
+print("Checking for missing values in relative abundance:")
+print(sum(is.na(relative_abundance)))  # Count NA values
+print(sum(is.nan(as.matrix(relative_abundance))))  # Count NaN values
+print(sum(is.infinite(as.matrix(relative_abundance))))  # Count Inf values
+
+# Remove rows containing NA, NaN, or Inf
+relative_abundance <- relative_abundance[complete.cases(relative_abundance) & 
+                                        !apply(relative_abundance, 1, function(x) any(is.infinite(x))), ]
+
+# 2. Calculate Shannon diversity index
+shannon_diversity <- function(abundance) {
+    abundance <- abundance[abundance > 0]
+    return(-sum(abundance * log(abundance)))
+}
+shannon_indices <- apply(relative_abundance, 1, shannon_diversity)
+relative_abundance$Shannon <- shannon_indices
+
+# Save data with Shannon indices
+write.csv(relative_abundance, "virus_alpha_diversity.csv", row.names = TRUE)
+
+# 3. Group by continent
+relative_abundance$Continent <- str_extract(rownames(relative_abundance), "^[^_]+")
+
+# Check sample sizes
+sample_counts <- relative_abundance %>%
+    group_by(Continent) %>%
+    summarise(Count = n())
+print("Sample sizes:")
+print(sample_counts)
+relative_abundance <- relative_abundance[relative_abundance$Continent %in% sample_counts$Continent[sample_counts$Count >= 2], ]
+
+# Check variance of Shannon indices
+shannon_by_continent <- relative_abundance %>%
+    group_by(Continent) %>%
+    summarise(Var_Shannon = var(Shannon, na.rm = TRUE))
+print("Variance of Shannon indices:")
+print(shannon_by_continent)
+
+# Calculate mean values
+continent_diversity <- relative_abundance %>%
+    group_by(Continent) %>%
+    summarise(Mean_Shannon = mean(Shannon, na.rm = TRUE))
+print("Mean values:")
+print(continent_diversity)
+
+# Remove NA or Inf values
+relative_abundance <- relative_abundance[!is.na(relative_abundance$Shannon) & !is.infinite(relative_abundance$Shannon), ]
+
+# 4. Perform ANOVA and Tukey HSD test to generate significance letters
+# Conduct one-way ANOVA
+anova_result <- aov(Shannon ~ Continent, data = relative_abundance)
+print("ANOVA results:")
+print(summary(anova_result))
+
+# Perform Tukey HSD test
+tukey_result <- HSD.test(anova_result, "Continent", group = TRUE)
+print("Tukey HSD results:")
+print(tukey_result$groups)
+
+# Extract significance letters
+diff_letters <- data.frame(
+    Continent = rownames(tukey_result$groups),
+    Letter = tukey_result$groups$groups
+)
+print("Significance letters:")
+print(diff_letters)
+
+# Check if diff_letters is empty
+if (nrow(diff_letters) == 0) {
+    stop("Failed to generate significance letters, possibly due to ANOVA or Tukey HSD test failure. Please check data distribution or sample size.")
+}
+
+# Calculate uniform letter display position (all letters on a horizontal line)
+max_shannon <- max(relative_abundance$Shannon, na.rm = TRUE)
+letter_positions <- diff_letters %>%
+    mutate(Label_y = max_shannon + 0.5)
+
+# 5. Create boxplot
+p <- ggplot(relative_abundance, aes(x = Continent, y = Shannon, fill = Continent)) +  
+    geom_boxplot(color = "black", alpha = 0.7) +
+    geom_jitter(width = 0, aes(color = Continent), alpha = 0.4) +
+    labs(title = "Alpha Diversity by Continent", x = "Continent", y = "Shannon Index") +
+    theme_minimal() +
+    theme(
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.ticks = element_line(color = "black"),
+        axis.ticks.length = unit(0.2, "cm"),
+        panel.grid.major = element_line(color = "gray", linewidth = 0.5),
+        panel.grid.minor = element_line(color = "lightgray", linewidth = 0.25),
+        panel.grid.major.y = element_line(color = "gray", linewidth = 0.5, linetype = "dashed"),
+        axis.line = element_line(color = "black", linewidth = 0.5)
+    ) +
+    scale_fill_manual(values = c("#56B4E9", "#CC79A7", "#009E73", "#F0E442", "#999999"), guide = "none") +
+    scale_color_manual(values = c("#56B4E9", "#CC79A7", "#009E73", "#F0E442", "#999999"), guide = "none") +
+    scale_y_continuous(
+        breaks = seq(0, 6, by = 1),
+        limits = c(0, max_shannon + 1),  # Dynamically adjust y-axis upper limit
+        expand = c(0, 0),
+        minor_breaks = seq(0, 6, by = 0.5)
+    ) +
+    geom_text(
+        data = letter_positions,
+        aes(x = Continent, y = Label_y, label = Letter),
+        size = 5,
+        vjust = -0.5
+    )
+
+# Save plot
+ggsave("geographic_alpha_diversity_with_diff_letters.pdf", plot = p, width = 8, height = 6, units = "in", dpi = 300)
+
+# Display plot
+print(p)
