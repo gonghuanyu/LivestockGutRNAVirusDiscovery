@@ -1,215 +1,112 @@
-# =========================
-# Host vs Geography explained variation
-# Input files:
-#   1) sample_metadata.csv
-#   2) aggregated_rpm_counts.csv
-# =========================
-
-library(vegan)
-library(ggplot2)
+# Load necessary libraries
 library(dplyr)
-library(tibble)
-library(readr)
+library(stringr)
+library(VennDiagram)
+library(grid)
 
-# -------------------------
-# 1. Read metadata
-# -------------------------
-meta <- read.csv("sample_metadata.csv", stringsAsFactors = FALSE, check.names = FALSE)
+# 1. Load data and calculate relative abundance
+data <- read.csv("aggregated_rpm_counts-goe.csv", row.names = 1)
+data$Total <- rowSums(data)
+relative_abundance <- data[, -ncol(data)] / data$Total
 
-# required columns: sample_id, Host, Continent
-stopifnot(all(c("sample_id", "Host", "Continent") %in% colnames(meta)))
+# 2. Group by continent and extract virus lists
+relative_abundance$Continent <- str_extract(rownames(relative_abundance), "^[^_]+")
+binary_matrix <- relative_abundance[, !colnames(relative_abundance) %in% c("Continent")] > 0
+binary_df <- as.data.frame(binary_matrix)
+binary_df$Continent <- relative_abundance$Continent
 
-meta <- meta %>%
-  distinct(sample_id, .keep_all = TRUE) %>%
-  filter(!is.na(sample_id), !is.na(Host), !is.na(Continent))
+continent_groups <- split(binary_df, binary_df$Continent)
+virus_lists <- lapply(continent_groups, function(x) {
+  colnames(binary_df)[1:(ncol(binary_df)-1)][colSums(x[, 1:(ncol(x)-1)], na.rm = TRUE) > 0]
+})
 
-# -------------------------
-# 2. Read abundance matrix
-# -------------------------
-abund_raw <- read.csv("aggregated_rpm_counts.csv", check.names = FALSE, stringsAsFactors = FALSE)
+# Remove empty groups (if any)
+virus_lists <- virus_lists[lengths(virus_lists) > 0]
 
-# Automatically detect sample_id column
-if ("sample_id" %in% colnames(abund_raw)) {
-  abund <- abund_raw
+# View the number of virus types detected per continent (for debugging)
+print("Number of virus types detected per continent:")
+lapply(virus_lists, length)
+
+# 3. Create Venn diagram
+continents <- names(virus_lists)
+virus_sets <- virus_lists
+
+# Define color palette for continents
+bar_colors <- c("Africa" = "#56b4e9", "Europe" = "#009e73", 
+                "North America" = "#f0e442", "Asia" = "#cc79a7", 
+                "Oceania" = "#999999")
+
+# Set black outline
+outline_color <- "black"  # Outline color set to black
+
+# Draw Venn diagram based on the number of continents
+if (length(continents) < 2) {
+  stop("At least 2 continents are required to draw a Venn diagram")
+} else if (length(continents) == 2) {
+  venn_data <- list(A = virus_sets[[1]], B = virus_sets[[2]])
+  venn.plot <- venn.diagram(
+    x = venn_data,
+    category.names = continents,
+    filename = NULL,  # Display directly, do not save to file
+    col = outline_color,  # Black outline
+    fill = bar_colors[continents[1:2]],  # Apply fill colors for two continents
+    alpha = 0.8,            # Transparency
+    cex = 1.5,            # Text size within regions
+    cat.cex = 1.5,        # Text size for continent names
+    cat.col = "black",    # Color for continent names
+    main = "Virus Distribution Across Continents",
+    main.cex = 2
+  )
+} else if (length(continents) == 3) {
+  venn_data <- list(A = virus_sets[[1]], B = virus_sets[[2]], C = virus_sets[[3]])
+  venn.plot <- venn.diagram(
+    x = venn_data,
+    category.names = continents,
+    filename = NULL,
+    output = TRUE,
+    col = outline_color,
+    fill = bar_colors[continents[1:3]],  # Apply fill colors for three continents
+    alpha = 0.8,
+    cex = 1.5,
+    cat.cex = 1.5,
+    cat.col = "black",
+    main = "Virus Distribution Across Continents",
+    main.cex = 2
+  )
+} else if (length(continents) == 4) {
+  venn_data <- list(A = virus_sets[[1]], B = virus_sets[[2]], C = virus_sets[[3]], D = virus_sets[[4]])
+  venn.plot <- venn.diagram(
+    x = venn_data,
+    category.names = continents,
+    filename = NULL,
+    output = TRUE,
+    col = outline_color,
+    fill = bar_colors[continents[1:4]],  # Apply fill colors for four continents
+    alpha = 0.8,
+    cex = 1.5,
+    cat.cex = 1.5,
+    cat.col = "black",
+    main = "Virus Distribution Across Continents",
+    main.cex = 2
+  )
 } else {
-  colnames(abund_raw)[1] <- "sample_id"
-  abund <- abund_raw
+  venn_data <- list(A = virus_sets[[1]], B = virus_sets[[2]], C = virus_sets[[3]], 
+                    D = virus_sets[[4]], E = virus_sets[[5]])
+  venn.plot <- venn.diagram(
+    x = venn_data,
+    category.names = continents,
+    filename = NULL,
+    output = TRUE,
+    col = outline_color,
+    fill = bar_colors[continents[1:5]],  # Apply fill colors for five continents
+    alpha = 0.8,
+    cex = 1.5,
+    cat.cex = 1.5,
+    cat.col = "black",
+    main = "Virus Distribution Across Continents",
+    main.cex = 2
+  )
 }
 
-# Remove duplicates
-abund <- abund %>%
-  distinct(sample_id, .keep_all = TRUE)
-
-# Keep only samples shared between metadata and abundance
-common_ids <- intersect(meta$sample_id, abund$sample_id)
-
-cat("=== Number of shared samples ===\n")
-print(length(common_ids))
-
-meta <- meta %>%
-  filter(sample_id %in% common_ids)
-
-abund <- abund %>%
-  filter(sample_id %in% common_ids)
-
-# Ensure same order
-meta <- meta %>% arrange(match(sample_id, abund$sample_id))
-abund <- abund %>% arrange(match(sample_id, meta$sample_id))
-
-stopifnot(all(meta$sample_id == abund$sample_id))
-
-# -------------------------
-# 3. Build abundance matrix
-# -------------------------
-abund_mat <- abund %>%
-  column_to_rownames("sample_id") %>%
-  as.data.frame()
-
-# Convert all to numeric
-abund_mat[] <- lapply(abund_mat, as.numeric)
-
-# Remove samples with all zeros
-keep_samples <- rowSums(abund_mat, na.rm = TRUE) > 0
-abund_mat <- abund_mat[keep_samples, , drop = FALSE]
-meta <- meta[keep_samples, , drop = FALSE]
-
-# Remove vOTUs with all zeros
-abund_mat <- abund_mat[, colSums(abund_mat, na.rm = TRUE) > 0, drop = FALSE]
-
-# Convert to factors
-meta$Host <- as.factor(meta$Host)
-meta$Continent <- as.factor(meta$Continent)
-
-cat("=== Final abundance matrix dimensions ===\n")
-print(dim(abund_mat))
-
-cat("=== Sample counts by Host ===\n")
-print(table(meta$Host))
-
-cat("=== Sample counts by Continent ===\n")
-print(table(meta$Continent))
-
-# Optional: remove groups with fewer than 2 samples
-valid_hosts <- names(table(meta$Host)[table(meta$Host) >= 2])
-valid_conts <- names(table(meta$Continent)[table(meta$Continent) >= 2])
-
-keep_groups <- meta$Host %in% valid_hosts & meta$Continent %in% valid_conts
-abund_mat <- abund_mat[keep_groups, , drop = FALSE]
-meta <- meta[keep_groups, , drop = FALSE]
-
-# -------------------------
-# 4. Relative abundance + Hellinger transform
-# -------------------------
-abund_rel <- decostand(abund_mat, method = "total")
-abund_hel <- decostand(abund_rel, method = "hellinger")
-
-# -------------------------
-# 5. Bray-Curtis PERMANOVA
-# -------------------------
-bray_dist <- vegdist(abund_hel, method = "bray")
-
-adonis_main <- adonis2(
-  bray_dist ~ Host + Continent,
-  data = meta,
-  permutations = 9999,
-  by = "margin"
-)
-
-cat("=== PERMANOVA: Bray-Curtis ===\n")
-print(adonis_main)
-
-# -------------------------
-# 6. Jaccard sensitivity analysis
-# -------------------------
-abund_pa <- ifelse(abund_mat > 0, 1, 0)
-jaccard_dist <- vegdist(abund_pa, method = "jaccard", binary = TRUE)
-
-adonis_jaccard <- adonis2(
-  jaccard_dist ~ Host + Continent,
-  data = meta,
-  permutations = 9999,
-  by = "margin"
-)
-
-cat("=== PERMANOVA: Jaccard ===\n")
-print(adonis_jaccard)
-
-# -------------------------
-# 7. betadisper
-# -------------------------
-bd_host <- betadisper(bray_dist, meta$Host)
-bd_cont <- betadisper(bray_dist, meta$Continent)
-
-cat("=== betadisper: Host ===\n")
-print(anova(bd_host))
-print(permutest(bd_host, permutations = 9999))
-
-cat("=== betadisper: Continent ===\n")
-print(anova(bd_cont))
-print(permutest(bd_cont, permutations = 9999))
-
-# -------------------------
-# 8. PCoA
-# -------------------------
-pcoa <- cmdscale(bray_dist, eig = TRUE, k = 2)
-pcoa_df <- as.data.frame(pcoa$points)
-colnames(pcoa_df) <- c("PCoA1", "PCoA2")
-pcoa_df$Host <- meta$Host
-pcoa_df$Continent <- meta$Continent
-
-eig <- pcoa$eig
-var_explained <- eig / sum(eig[eig > 0]) * 100
-xlab <- paste0("PCoA1 (", round(var_explained[1], 2), "%)")
-ylab <- paste0("PCoA2 (", round(var_explained[2], 2), "%)")
-
-# PCoA by Host
-p_host <- ggplot(pcoa_df, aes(PCoA1, PCoA2, color = Host)) +
-  geom_point(size = 2, alpha = 0.8) +
-  stat_ellipse(aes(group = Host), type = "norm", level = 0.95, linewidth = 0.8) +
-  labs(title = "PCoA of RNA virome composition by host",
-       x = xlab, y = ylab) +
-  theme_classic(base_size = 14)
-
-ggsave("PCoA_by_host.pdf", p_host, width = 8, height = 6)
-
-# PCoA by Continent
-p_cont <- ggplot(pcoa_df, aes(PCoA1, PCoA2, color = Continent)) +
-  geom_point(size = 2, alpha = 0.8) +
-  stat_ellipse(aes(group = Continent), type = "norm", level = 0.95, linewidth = 0.8) +
-  labs(title = "PCoA of RNA virome composition by continent",
-       x = xlab, y = ylab) +
-  theme_classic(base_size = 14)
-
-ggsave("PCoA_by_continent.pdf", p_cont, width = 8, height = 6)
-
-# -------------------------
-# 9. R2 barplot
-# -------------------------
-adonis_df <- as.data.frame(adonis_main)
-adonis_df$Term <- rownames(adonis_df)
-
-plot_df <- adonis_df %>%
-  filter(Term %in% c("Host", "Continent")) %>%
-  select(Term, R2, `Pr(>F)`)
-
-plot_df$label <- paste0("R² = ", round(plot_df$R2, 3),
-                        "\nP = ", signif(plot_df$`Pr(>F)`, 3))
-
-p_r2 <- ggplot(plot_df, aes(x = Term, y = R2, fill = Term)) +
-  geom_col(width = 0.7) +
-  geom_text(aes(label = label), vjust = -0.2, size = 4) +
-  labs(title = "Relative explanatory power of host and geography",
-       x = NULL, y = expression(R^2)) +
-  theme_classic(base_size = 14) +
-  theme(legend.position = "none")
-
-ggsave("PERMANOVA_R2_host_vs_continent.pdf", p_r2, width = 6, height = 5)
-
-# -------------------------
-# 10. Save outputs
-# -------------------------
-write.csv(as.data.frame(adonis_main), "PERMANOVA_BrayCurtis_host_vs_continent.csv")
-write.csv(as.data.frame(adonis_jaccard), "PERMANOVA_Jaccard_host_vs_continent.csv")
-write.csv(meta, "metadata_used_in_analysis.csv", row.names = FALSE)
-
-cat("=== Analysis completed ===\n")
+# Display Venn diagram in R window
+grid.draw(venn.plot)
